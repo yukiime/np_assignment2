@@ -1,0 +1,10 @@
+.clangd
+.vscode
+*.o
+*.a
+client
+server
+serverD
+test
+
+
