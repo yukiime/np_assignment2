@@ -124,6 +124,7 @@ int main(int argc, char *argv[])
             //upper bound of retransmitting
             if(retransmit == 2){
                 printf("transmit times = 3, up to the bound.\n");
+                printf("Not OK\n");
                 break;
             }
             //reset the timeval
@@ -150,7 +151,7 @@ int main(int argc, char *argv[])
             else if(ret == 50)
             {
                 // 回传
-                sleep(11);
+                // sleep(11);
                 // sleep(5);
 
                 memcpy(&respondeMessage, rvbuf, ret);
