@@ -1,5 +1,5 @@
 
-all: libcalc test client server serverD clienterror
+all: libcalc test client server serverD
 
 
 
@@ -16,9 +16,6 @@ clientmain.o: clientmain.cpp protocol.h
 main.o: main.cpp protocol.h
 	$(CXX) -Wall -c main.cpp -I.
 
-clienterror.o: clienterror.cpp protocol.h
-	$(CXX) -Wall -c clienterror.cpp -I.
-
 
 test: main.o calcLib.o
 	$(CXX) -L./ -Wall -o test main.o -lcalc
@@ -32,10 +29,6 @@ server: servermain.o calcLib.o
 serverD: servermainD.o calcLib.o
 	$(CXX) -L./ -Wall -o serverD servermainD.o -lcalc 
 
-clienterror: clienterror.o calcLib.o
-	$(CXX) -L./ -Wall -o clienterror clienterror.o -lcalc
-
-	
 
 calcLib.o: calcLib.c calcLib.h
 	gcc -Wall -fPIC -c calcLib.c
