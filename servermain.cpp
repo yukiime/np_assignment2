@@ -1,12 +1,9 @@
-
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <signal.h>
 #include <unistd.h>
 #include <sys/time.h>
 
-/* You will to add includes here */
 #include <string.h>
 #include <map>
 #include <netinet/in.h>
@@ -39,8 +36,8 @@ int loopCount=0;
 int Ter=0;
 int id = 0;//id starts from 0
 int work = WAITING;// not working at the start
-map<int, int> communication_ID;//the map stores the clients' datagrams id and the waiting time
-mutex map_lock;//The lock protecting communication_id
+map<int, int> communicationID;//the map stores the clients' datagrams id and the waiting time
+mutex map_lock;//The lock protecting communicationID
 
 //This function is used to get the result of a calc protocol.
 void getResult(calcProtocol* ptc){
@@ -77,7 +74,7 @@ void getResult(calcProtocol* ptc){
 }
 
 /* Call back function, will be called when the SIGALRM is raised when the timer expires. */
-void checkJobbList(int signum){
+void checkWaitList(int signum){
   // As anybody can call the handler, its good coding to check the signal number that called it.
   if(work == WAITING){// the server is available, just record the time.
     loopCount++;
@@ -85,15 +82,15 @@ void checkJobbList(int signum){
   else{
     printf("Let me be, I want to sleep.\n");
   }
-  //check the communication_id
+  //check the communicationID
   //1. lock the map
   map_lock.lock();
   //2. check in turn
-  for(map<int, int>::iterator it = communication_ID.begin(); it != communication_ID.end();){
+  for(map<int, int>::iterator it = communicationID.begin(); it != communicationID.end();){
     it->second++;
     if(it->second>=10){
       printf("Client %d waits more than 10s.\n", it->first);
-      it = communication_ID.erase(it);
+      it = communicationID.erase(it);
     }
     else ++it;
   }
@@ -134,7 +131,7 @@ int main(int argc, char *argv[]){
   alarmTime.it_value.tv_usec=0;
 
   /* Regiter a callback function, associated with the SIGALRM signal, which will be raised when the alarm goes of */
-  signal(SIGALRM, checkJobbList);
+  signal(SIGALRM, checkWaitList);
   setitimer(ITIMER_REAL,&alarmTime,NULL); // Start/register the alarm. 
   //register id stores current id number.
   int register_id;
@@ -145,17 +142,17 @@ int main(int argc, char *argv[]){
   {
     struct sockaddr_in ipv4;
     struct sockaddr_in6 ipv6;
-  } servAddr, clitAddr;
-  // struct sockaddr_in servAddr;
-  // struct sockaddr_in clitAddr;
+  } serverAddress, clientAddress;
+  // struct sockaddr_in serverAddress;
+  // struct sockaddr_in clientAddress;
   socklen_t address_length;
-  address_length = sizeof(clitAddr);
+  address_length = sizeof(clientAddress);
 
-  int servfd, rvsdlen;
+  int servfd, receiveLen;
   if(ipv6Flag)
   {
-    // struct sockaddr_in6 servAddr; // 使用 sockaddr_in6 结构来支持 IPv6 地址
-    // struct sockaddr_in6 clitAddr;
+    // struct sockaddr_in6 serverAddress; // 使用 sockaddr_in6 结构来支持 IPv6 地址
+    // struct sockaddr_in6 clientAddress;
 
     if((servfd = socket(AF_INET6, SOCK_DGRAM, 0))==-1)
     {
@@ -163,40 +160,43 @@ int main(int argc, char *argv[]){
     exit(1);
     }
 
-    bzero(&servAddr, sizeof(servAddr));
+    bzero(&serverAddress, sizeof(serverAddress));
 
-    servAddr.ipv6.sin6_family = AF_INET6; // 指定使用 IPv6 地址族
-    servAddr.ipv6.sin6_port = htons(MYPORT); // 设置端口号
-    servAddr.ipv6.sin6_addr = in6addr_any; // 使用 in6addr_any 表示绑定到所有可用的 IPv6 地址
+    serverAddress.ipv6.sin6_family = AF_INET6; // 指定使用 IPv6 地址族
+    serverAddress.ipv6.sin6_port = htons(MYPORT); // 设置端口号
+    serverAddress.ipv6.sin6_addr = in6addr_any; // 使用 in6addr_any 表示绑定到所有可用的 IPv6 地址
 
     printf("IPv6\n");
   }
   else
   {
-    // struct sockaddr_in servAddr;
-    // struct sockaddr_in clitAddr;
+    // struct sockaddr_in serverAddress;
+    // struct sockaddr_in clientAddress;
 
     // socklen_t address_length;
-    // address_length = sizeof(clitAddr);
+    // address_length = sizeof(clientAddress);
+    char delim[]=":";
+    char *serverAddPtr=strtok(argv[1],delim);
+    char *serverPortPtr=strtok(NULL,delim);
 
     if((servfd = socket(AF_INET, SOCK_DGRAM, 0))==-1)
     {
       perror("create socket");
       exit(1);
     }
-    bzero(&servAddr, sizeof(servAddr));
-    servAddr.ipv4.sin_family = AF_INET;
-    servAddr.ipv4.sin_addr.s_addr = htonl(INADDR_ANY);
-    servAddr.ipv4.sin_port = htons(MYPORT);
+    bzero(&serverAddress, sizeof(serverAddress));
+    serverAddress.ipv4.sin_family = AF_INET;
+    serverAddress.ipv4.sin_addr.s_addr = inet_addr(serverAddPtr);
+    serverAddress.ipv4.sin_port = htons(atoi(serverPortPtr));
     
     printf("IPv4\n");
   }
 
-  //initialize servAddr ipv4
+  //initialize serverAddress ipv4
 
 
   //bind port & address of server
-  if(bind(servfd, (struct sockaddr*)&servAddr, sizeof(servAddr))==-1){
+  if(bind(servfd, (struct sockaddr*)&serverAddress, sizeof(serverAddress))==-1){
     perror("bind");
     exit(1);
   }
@@ -206,27 +206,27 @@ int main(int argc, char *argv[]){
   calcProtocol ptc, respondePtc;
   calcMessage msg;
   //start communicating
-  while((rvsdlen = recvfrom(servfd,rvsdbuf, MAXLENGTH, 0, (struct sockaddr*)&clitAddr, &address_length))){
+  while((receiveLen = recvfrom(servfd,rvsdbuf, MAXLENGTH, 0, (struct sockaddr*)&clientAddress, &address_length))){
     //if receive something error
-    if(rvsdlen<0){
+    if(receiveLen<0){
       printf("Client error!\n");
       break;
     }
     //receive normally works
     else{
       work = WORKING;
-      if(rvsdlen == sizeof(msg)){
-        getpeername(servfd, (struct sockaddr*)&clitAddr, &address_length);//getpeername is used to get client address and port.
-        memcpy(&msg, rvsdbuf, rvsdlen);
+      if(receiveLen == sizeof(msg)){
+        getpeername(servfd, (struct sockaddr*)&clientAddress, &address_length);//getpeername is used to get client address and port.
+        memcpy(&msg, rvsdbuf, receiveLen);
         if(ntohs(msg.type) == 22 && ntohl(msg.message)== 0){
           register_id = id;
           if (ipv6Flag)
           {
-            printf("--------------A client has come--------------\nclient[%d]: IP:%s PORT:%d\n",register_id, clitAddr.ipv6.sin6_addr, ntohs(clitAddr.ipv6.sin6_port));
+            printf("--------------A client has come--------------\nclient[%d]: IP:%s PORT:%d\n",register_id, clientAddress.ipv6.sin6_addr, ntohs(clientAddress.ipv6.sin6_port));
           }
           else
           {
-            printf("--------------A client has come--------------\nclient[%d]: IP:%s PORT:%d\n",register_id, inet_ntoa(clitAddr.ipv4.sin_addr), ntohs(clitAddr.ipv4.sin_port));
+            printf("--------------A client has come--------------\nclient[%d]: IP:%s PORT:%d\n",register_id, inet_ntoa(clientAddress.ipv4.sin_addr), ntohs(clientAddress.ipv4.sin_port));
           }
           
           //receive an clac message, copy it to the msg.
@@ -237,11 +237,11 @@ int main(int argc, char *argv[]){
           register_id = id;
           if (ipv6Flag)
           {
-            printf("--------------A client has come--------------\nclient[%d]: IP:%s PORT:%d\n",register_id, clitAddr.ipv6.sin6_addr, ntohs(clitAddr.ipv6.sin6_port));
+            printf("--------------A client has come--------------\nclient[%d]: IP:%s PORT:%d\n",register_id, clientAddress.ipv6.sin6_addr, ntohs(clientAddress.ipv6.sin6_port));
           }
           else
           {
-            printf("--------------A client has come--------------\nclient[%d]: IP:%s PORT:%d\n",register_id, inet_ntoa(clitAddr.ipv4.sin_addr), ntohs(clitAddr.ipv4.sin_port));
+            printf("--------------A client has come--------------\nclient[%d]: IP:%s PORT:%d\n",register_id, inet_ntoa(clientAddress.ipv4.sin_addr), ntohs(clientAddress.ipv4.sin_port));
           }
           //receive an clac message, copy it to the msg.
           printf("Server received a calcMessage from client.\n");
@@ -250,14 +250,14 @@ int main(int argc, char *argv[]){
           msg.message = htonl(2);
           msg.major_version = htons(1);
           msg.minor_version = htons(0);
-          sendto(servfd, (char *)&msg, sizeof(calcMessage), 0, (struct sockaddr *)&clitAddr, address_length);
+          sendto(servfd, (char *)&msg, sizeof(calcMessage), 0, (struct sockaddr *)&clientAddress, address_length);
           printf("--------------A client has finished!--------------\n\n");
           work = WAITING;
           loopCount = 0;
           continue;
         }
-        //put register id into communication_id map
-        communication_ID[register_id] = 0;
+        //put register id into communicationID map
+        communicationID[register_id] = 0;
         //generate clacProtocol
         initCalcLib();
         loopCount = 0;
@@ -285,7 +285,7 @@ int main(int argc, char *argv[]){
         ptc.type = htons(1);
         ptc.id = htonl(id++);
         //send to client
-        sendto(servfd, (char*)&ptc,sizeof(ptc),0,(struct sockaddr*)&clitAddr,address_length);
+        sendto(servfd, (char*)&ptc,sizeof(ptc),0,(struct sockaddr*)&clientAddress,address_length);
         printf("Server has generated a clacProtocol and sent to client.\n");
         char operS[10]; 
         switch(ntohl(ptc.arith)){
@@ -319,22 +319,22 @@ int main(int argc, char *argv[]){
                 ntohs(ptc.type),operS,ntohl(ptc.inValue1),ntohl(ptc.inValue2),ptc.flValue1,ptc.flValue2);
       }
       //if a calcProtocol has been returned
-      else if(rvsdlen == sizeof(respondePtc)){
+      else if(receiveLen == sizeof(respondePtc)){
 
         sleep(100);
 
-        getpeername(servfd, (struct sockaddr*)&clitAddr, &address_length);//getpeername is used to get client address and port.
+        getpeername(servfd, (struct sockaddr*)&clientAddress, &address_length);//getpeername is used to get client address and port.
         if (ipv6Flag)
         {
-          printf("\n--------------A client has continued!--------------\nGet a responde from : IP:%s PORT:%d\n",clitAddr.ipv6.sin6_addr, ntohs(clitAddr.ipv6.sin6_port));
+          printf("\n--------------A client has continued!--------------\nGet a responde from : IP:%s PORT:%d\n",clientAddress.ipv6.sin6_addr, ntohs(clientAddress.ipv6.sin6_port));
         }
         else
         {
-          printf("\n--------------A client has continued!--------------\nGet a responde from : IP:%s PORT:%d\n",inet_ntoa(clitAddr.ipv4.sin_addr), ntohs(clitAddr.ipv4.sin_port));
+          printf("\n--------------A client has continued!--------------\nGet a responde from : IP:%s PORT:%d\n",inet_ntoa(clientAddress.ipv4.sin_addr), ntohs(clientAddress.ipv4.sin_port));
         }
         memcpy(&respondePtc, rvsdbuf, sizeof(respondePtc));
         register_id = ntohl(respondePtc.id);
-        if(communication_ID.count(register_id) == 0){
+        if(communicationID.count(register_id) == 0){
           //the client is out of the map because its message is out of time.
           printf("This clinet has been deleted.\n");
           work = WAITING;
@@ -342,7 +342,7 @@ int main(int argc, char *argv[]){
           continue;
         }
         //receive a responde normally
-        communication_ID[register_id] = 0;//reset the time.
+        communicationID[register_id] = 0;//reset the time.
         getResult(&ptc);//obtain the result of calcProtocol
         printf("get result from client:\n  int: %u\n  float:%f\n",ntohl(respondePtc.inResult),respondePtc.flResult);
         //check the result from client
@@ -353,7 +353,7 @@ int main(int argc, char *argv[]){
           msg.major_version = htons(1);
           msg.minor_version = htons(0);
           msg.protocol = htons(17);
-          sendto(servfd, (char *)&msg, sizeof(calcMessage), 0, (struct sockaddr *)&clitAddr, address_length);
+          sendto(servfd, (char *)&msg, sizeof(calcMessage), 0, (struct sockaddr *)&clientAddress, address_length);
           printf("Succeeded!\n");
         }
         else{
@@ -362,12 +362,12 @@ int main(int argc, char *argv[]){
           msg.major_version = htons(1);
           msg.minor_version = htons(0);
           msg.protocol = htons(17);
-          sendto(servfd, (char *)&msg, sizeof(calcMessage), 0, (struct sockaddr *)&clitAddr, address_length);
+          sendto(servfd, (char *)&msg, sizeof(calcMessage), 0, (struct sockaddr *)&clientAddress, address_length);
           printf("Failed!\n");
         }
         //erase the register id
         map_lock.lock();
-        communication_ID.erase(register_id);
+        communicationID.erase(register_id);
         map_lock.unlock();
         printf("--------------A client has finished!--------------\n\n");
         work = WAITING;
@@ -380,7 +380,7 @@ int main(int argc, char *argv[]){
         msg.major_version = htons(1);
         msg.minor_version = htons(0);
         msg.protocol = htons(17);
-        sendto(servfd, (char *)&msg, sizeof(calcMessage), 0, (struct sockaddr *)&clitAddr, address_length);
+        sendto(servfd, (char *)&msg, sizeof(calcMessage), 0, (struct sockaddr *)&clientAddress, address_length);
         printf("Can't handle this type of message! Rejected!\n");
         work = WAITING;
         loopCount = 0;
